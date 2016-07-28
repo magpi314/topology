@@ -1,5 +1,3 @@
-#  creates something like a 'manifold' data type
-
 ALPHA = 'abcdefghijklmnopqrstuvwxyz'
 
 class InvalidStringError(Exception):
@@ -15,10 +13,11 @@ class Manifold:
    _chi = 0
    _string = ''
    _normal_form = ''
-   paths = [] # this will be a collection of '_Path' objects
+   _degenerate = False # once i implement cutting, this is a surface where
+                       # some sides are not glued
+   paths = [] # this will be a collection of 'Path' objects
 
    def __init__(self, string):
-      # dimension? it's always 2 right now...
       # operations: cartesian product?
       # can i represent an n dimensional manifold with an n-1 dimensional array?
       edges = []
@@ -37,7 +36,7 @@ class Manifold:
          for k in range(2):   
             # making it do this twice is not the best way...but it works!
             for i in range(len(nodes)):
-               nn = nodes[i]  # this is the name of the node we're looking at
+               nn = nodes[i]
                if nn == None: continue
                try:
                   atbuttof = edges[i]
@@ -59,7 +58,6 @@ class Manifold:
       self._chi = int(2 - len(edges) / 2 + max(nodes))
    
       if self.orientable == True:
-        # it's nTor or Sph
          n = int((2 - self._chi) / 2)
          if n == 1: n = ""
          self._t_class = "S" if n == 0 else str(n) + "T"
@@ -69,7 +67,6 @@ class Manifold:
             if n == "": n = 1
             self._normal_form = torus(n)
       else:
-         # it's nProj
          n = 2 - self._chi
          if n == 1: n = ""
          self._t_class = str(n) + "P"   
@@ -102,7 +99,13 @@ class Manifold:
       return self._normal_form
       
    def __repr__(self):
-      return "< i would like this to work>"
+      typ = self.t_class
+      s = typ if len(typ) == 1 else typ[1]
+      n = "" if len(typ) == 1 else typ[0] + "-fold "
+      if s == "S": typ = n + "Sphere"
+      if s == "T": typ = n + "Torus"
+      if s == "P": typ = n + "Projective Plane"
+      return "<{0} {1}>".format(typ, self.string)
 
    def __add__(self, other):
       if not isinstance(other, Manifold): raise TypeError("expected <Class 'Manifold'> got {}.".format(type(other)))
@@ -131,6 +134,8 @@ class Manifold:
    #  surf.rewrite() ' rewrites surf, making it ALPHAical?
      
    def split(self, string):
+      #  [x] ab [y] BA <- [x] a [y] A
+      #  [x] ab [y] ab <- [x] a [y] a
       if string not in self.string: raise EdgeNotFoundError
       if len(string) > 1: 
          raise InvalidStringError('only on edge may be be split at a time')
@@ -160,20 +165,41 @@ class Manifold:
       self.__init__(retstring)
 
    def join(self, string):
-      #  [x] ab [y] BA <--> [x] a [y] A   one way 'splits'
-      #  [x] ab [y] ab <--> [x] a [y] a   the other way 'joins'
-      #
-      #  surf.split(a) ' looks for a, replaces it with a[nextletter]
-      #                ' and replaces altcase(a) with [NEXTLETTER]A
-      #  surf.join(ab) ' looks for ab, another ab or BA,
-      #                ' replaces ab with a and BA with A if applicable   
+      #  [x] ab [y] BA -> [x] a [y] A
+      #  [x] ab [y] ab -> [x] a [y] a
       if len(string) != 2: 
          raise InvalidStringError('only two edges may be joined')
       if string not in self.string: raise EdgeNotFoundError
-      opstr = _altcase(string[0]) + _altcase(string[1])
+      opstr = _altcase(string[1]) + _altcase(string[0])
       if self.string.count(string) + self.string.count(opstr) != 2:
          raise InvalidStringError('these edges may not be joined')
-            
+      model = self.string
+      if opstr in model and model.index(string) > model.index(opstr):
+         opstr, string = string, opstr
+      try:
+         firstpos = model.index(string)
+      except:
+         firstpos = model.index(opstr)
+      try:
+         lastpos = model[(firstpos + 2):].index(string) + firstpos + 2
+      except:
+         lastpos = model[(firstpos + 2):].index(opstr) + firstpos + 2
+      firstrepl = model[firstpos]
+      if model[firstpos] == model[lastpos]:
+         lastrepl = firstrepl
+      else:
+         lastrepl = _altcase(firstrepl)
+      part1 = model[0:firstpos]
+      part2 = model[firstpos + 2:lastpos]
+      if lastpos + 2 <= len(model):
+         part3 = model[lastpos + 2:len(model)]
+      else:
+         part3 = ""
+      retstring = part1 + firstrepl + part2 + lastrepl + part3
+      retstring = _rewrite(retstring)
+      print(retstring)
+      self.__init__(retstring)  
+   
      
 class _Path:
    def __init__(self, f, t):
@@ -208,7 +234,23 @@ def torus(n):
          retString += ALPHA[2 * i] + ALPHA[2 * i + 1]
          retString += ALPHA[2 * i].upper() + ALPHA[2 * i + 1].upper()
    return retString
-       
+
+def _rewrite(string):
+   L = []
+   d = {}
+   n = -1
+   retstr = ""
+   for c in string:
+      if c.lower() not in d:
+         n += 1
+         d[c.lower()] = n
+      if c.islower():
+         retstr += ALPHA[d[c]]
+      else:
+         retstr += ALPHA[d[c.lower()]].upper()
+   del d
+   return retstr
+
 def _next_letter(string):
    s = string.lower()
    return ALPHA[ALPHA.index(max(string)) + 2]
